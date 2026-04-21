@@ -17,8 +17,13 @@ import 'package:quickbite/utils/constants.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  await NotificationService().initialize();
+  try {
+    await Firebase.initializeApp();
+    await NotificationService().initialize();
+  } catch (e) {
+    debugPrint('Firebase initialization failed: $e');
+    // For development, continue without Firebase
+  }
   runApp(const QuickBiteApp());
 }
 

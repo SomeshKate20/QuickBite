@@ -1,15 +1,34 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:quickbite/models/cart_item.dart';
 import 'package:quickbite/models/order_model.dart';
 import 'package:quickbite/services/firestore_service.dart';
 
 class OrderProvider extends ChangeNotifier {
-  final FirestoreService _firestoreService = FirestoreService();
+  FirestoreService? _firestoreService;
   List<OrderModel> orders = [];
   bool isLoading = false;
   String? errorMessage;
+  bool _firebaseInitialized = false;
+
+  bool get firebaseAvailable => _firebaseInitialized;
+
+  OrderProvider() {
+    _initializeFirebase();
+  }
+
+  Future<void> _initializeFirebase() async {
+    try {
+      FirebaseFirestore.instance;
+      _firestoreService = FirestoreService();
+      _firebaseInitialized = true;
+    } catch (e) {
+      _firebaseInitialized = false;
+      debugPrint('Firebase not available: $e');
+    }
+  }
 
   Future<OrderModel?> placeOrder({
     required String userId,
@@ -30,10 +49,10 @@ class OrderProvider extends ChangeNotifier {
           .toList();
       final totalPrice = cartItems.fold<double>(
         0.0,
-        (sum, item) => sum + item.totalPrice,
+        (total, item) => total + item.totalPrice,
       );
       final order = OrderModel(
-        id: '',
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
         userId: userId,
         items: orderItems,
         totalPrice: totalPrice,
@@ -41,8 +60,17 @@ class OrderProvider extends ChangeNotifier {
         tokenNumber: _generateToken(),
         timestamp: DateTime.now(),
       );
-      final placedOrder = await _firestoreService.placeOrder(order);
-      return placedOrder;
+
+      if (_firebaseInitialized && _firestoreService != null) {
+        final placedOrder = await _firestoreService!.placeOrder(order);
+        return placedOrder;
+      } else {
+        // Simulate order placement for development
+        await Future.delayed(const Duration(seconds: 2));
+        orders.add(order);
+        errorMessage = 'Order placed successfully (using mock data)';
+        return order;
+      }
     } catch (error) {
       errorMessage = 'Unable to place order. Please try again later.';
       return null;
@@ -59,11 +87,18 @@ class OrderProvider extends ChangeNotifier {
     try {
       isLoading = true;
       notifyListeners();
-      orders = await _firestoreService.fetchOrders(
-        userId: userId,
-        admin: isAdmin,
-      );
-      errorMessage = null;
+
+      if (_firebaseInitialized && _firestoreService != null) {
+        orders = await _firestoreService!.fetchOrders(
+          userId: userId,
+          admin: isAdmin,
+        );
+        errorMessage = null;
+      } else {
+        // Return mock orders for development
+        orders = _getMockOrders(userId);
+        errorMessage = 'Using mock data - Firebase not configured';
+      }
     } catch (error) {
       errorMessage = 'Unable to fetch orders. Please refresh.';
       orders = [];
@@ -75,7 +110,12 @@ class OrderProvider extends ChangeNotifier {
 
   Future<void> updateOrderStatus(String orderId, String status) async {
     try {
-      await _firestoreService.updateOrderStatus(orderId, status);
+      if (_firebaseInitialized && _firestoreService != null) {
+        await _firestoreService!.updateOrderStatus(orderId, status);
+      } else {
+        // Simulate status update for development
+        await Future.delayed(const Duration(seconds: 1));
+      }
       orders = orders.map((order) {
         if (order.id == orderId) {
           return OrderModel(
@@ -95,6 +135,45 @@ class OrderProvider extends ChangeNotifier {
       errorMessage = 'Unable to update order status.';
       notifyListeners();
     }
+  }
+
+  List<OrderModel> _getMockOrders(String userId) {
+    return [
+      OrderModel(
+        id: 'mock_order_1',
+        userId: userId,
+        items: [
+          OrderItem(
+            id: '1',
+            name: 'Margherita Pizza',
+            quantity: 2,
+            price: 12.99,
+          ),
+          OrderItem(id: '4', name: 'French Fries', quantity: 1, price: 4.99),
+        ],
+        totalPrice: 30.97,
+        status: 'Ready',
+        tokenNumber: 123,
+        timestamp: DateTime.now().subtract(const Duration(hours: 1)),
+      ),
+      OrderModel(
+        id: 'mock_order_2',
+        userId: userId,
+        items: [
+          OrderItem(id: '2', name: 'Chicken Burger', quantity: 1, price: 8.99),
+          OrderItem(
+            id: '5',
+            name: 'Chocolate Milkshake',
+            quantity: 1,
+            price: 5.99,
+          ),
+        ],
+        totalPrice: 14.98,
+        status: 'Preparing',
+        tokenNumber: 124,
+        timestamp: DateTime.now().subtract(const Duration(minutes: 30)),
+      ),
+    ];
   }
 
   int _generateToken() {

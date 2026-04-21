@@ -8,29 +8,42 @@ Future<void> _firebaseBackgroundHandler(RemoteMessage message) async {
 }
 
 class NotificationService {
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  FirebaseMessaging? _messaging;
+  bool _firebaseInitialized = false;
+
+  bool get firebaseAvailable => _firebaseInitialized;
 
   Future<void> initialize() async {
-    await _requestPermissions();
-    FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundHandler);
-    FirebaseMessaging.onMessage.listen((message) {
-      debugPrint(
-        'QuickBite foreground notification: ${message.notification?.title}',
-      );
-    });
-    final token = await _messaging.getToken();
-    debugPrint('QuickBite FCM token: $token');
+    try {
+      await Firebase.initializeApp();
+      _messaging = FirebaseMessaging.instance;
+      _firebaseInitialized = true;
+      await _requestPermissions();
+      FirebaseMessaging.onBackgroundMessage(_firebaseBackgroundHandler);
+      FirebaseMessaging.onMessage.listen((message) {
+        debugPrint(
+          'QuickBite foreground notification: ${message.notification?.title}',
+        );
+      });
+      final token = await _messaging!.getToken();
+      debugPrint('QuickBite FCM token: $token');
+    } catch (e) {
+      _firebaseInitialized = false;
+      debugPrint('Firebase not available for notifications: $e');
+    }
   }
 
   Future<void> _requestPermissions() async {
-    await _messaging.requestPermission(
-      alert: true,
-      announcement: false,
-      badge: true,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-      sound: true,
-    );
+    if (_messaging != null) {
+      await _messaging!.requestPermission(
+        alert: true,
+        announcement: false,
+        badge: true,
+        carPlay: false,
+        criticalAlert: false,
+        provisional: false,
+        sound: true,
+      );
+    }
   }
 }
